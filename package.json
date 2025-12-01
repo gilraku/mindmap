@@ -2,6 +2,7 @@
   "name": "notebook-mindmap",
   "version": "1.0.0",
   "description": "NotebookLM Style MindMap",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

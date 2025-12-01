@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NotebookLM MindMap</title>
+    <title>NotebookLM MindMap Converter</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -51,10 +51,17 @@
 
     <!-- Controls -->
     <div class="controls">
-        <div class="flex items-center gap-2 mb-4">
-            <div class="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                N</div>
-            <h1 class="text-lg font-bold text-gray-800">NotebookLM Map</h1>
+        <div class="flex items-center gap-3 mb-8">
+            <div class="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-gray-900 leading-tight">MindMap</h1>
+                <p class="text-xs text-gray-500 font-medium">Converter</p>
+            </div>
         </div>
 
         <div class="mb-4">
@@ -78,22 +85,24 @@
                 </svg>
             </button>
             <div id="download-menu" class="download-menu">
-                <div class="ctx-item" onclick="downloadImage('png')">Save as Image (PNG)</div>
-                <div class="ctx-item" onclick="downloadPDF()">Save as Document (PDF)</div>
-                <div class="ctx-item" onclick="downloadJSON()">Save Data (JSON)</div>
+                <div class="ctx-item" id="btn-download-png">Save as Image (PNG)</div>
+                <div class="ctx-item" id="btn-download-pdf">Save as Document (PDF)</div>
+                <div class="ctx-item" id="btn-download-json">Save Data (JSON)</div>
             </div>
         </div>
 
         <div class="mt-4 p-3 bg-blue-50 rounded-xl text-xs text-blue-800 border border-blue-100">
-            <strong>Pro Tip:</strong><br>
-            • Drag a parent to move the whole group!<br>
-            • Right-Click to Edit/Add/Delete
+            <strong>Tip:</strong><br>
+            • Click kanan untuk Edit/Add/Delete
+        </div>
+        <div class="mt-2 text-center text-xs text-gray-400">
+            Created by Gilang
         </div>
     </div>
 
     <div id="viz-container"></div>
 
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
 </body>
 
 </html>

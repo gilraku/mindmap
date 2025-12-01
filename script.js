@@ -99,10 +99,26 @@ function setupInteractions() {
         saveEdit();
     });
 
+    // Download Actions
+    document.getElementById('btn-download-png').onclick = () => downloadImage('png');
+    document.getElementById('btn-download-pdf').onclick = downloadPDF;
+    document.getElementById('btn-download-json').onclick = downloadJSON;
+
     // Context Menu Items
     document.getElementById('ctx-add-child').onclick = () => { addChildNode(state.selectedNode); };
     document.getElementById('ctx-delete').onclick = () => { deleteNode(state.selectedNode); };
     document.getElementById('ctx-edit').onclick = () => { startEditing(state.selectedNode); };
+
+    // Keyboard Shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (state.editingNode) return; // Don't delete while editing text
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (state.selectedNode) {
+                deleteNode(state.selectedNode);
+                state.selectedNode = null; // Clear selection after delete
+            }
+        }
+    });
 }
 
 // --- Logic ---
@@ -135,7 +151,18 @@ function addChildNode(d) {
 function deleteNode(d) {
     if (!d || !d.parent) return;
 
-    // Update Data
+    // Special handling for depth 1 nodes (direct children of root)
+    if (d.depth === 1) {
+        const idx = state.rootData.children.indexOf(d.data);
+        if (idx > -1) {
+            state.rootData.children.splice(idx, 1);
+            if (state.rootData.children.length === 0) delete state.rootData.children;
+        }
+        update(state.root);
+        return;
+    }
+
+    // Update Data (for depth > 1)
     const siblingsData = d.parent.data.children;
     if (siblingsData) {
         const idx = siblingsData.indexOf(d.data);
@@ -240,30 +267,36 @@ function getBranchColor(d) {
     return colorScale(ancestor.data.id || ancestor.data.name);
 }
 
-function update(source) {
+function update(source, duration = config.duration) {
     state.treeLeft = d3.tree().nodeSize([config.nodeHeight, config.nodeWidth]);
     state.treeRight = d3.tree().nodeSize([config.nodeHeight, config.nodeWidth]);
 
     const rightData = { children: [] };
     const leftData = { children: [] };
 
-    if (state.root.children) {
-        state.root.children.forEach((child, i) => {
-            if (i % 2 === 0) { child.data.side = "right"; rightData.children.push(child.data); }
-            else { child.data.side = "left"; leftData.children.push(child.data); }
+    // Use _collapsed property to determine if we should show children
+    const rootChildren = state.rootData._collapsed ? [] : (state.rootData.children || []);
+
+    if (rootChildren.length) {
+        rootChildren.forEach((child, i) => {
+            if (i % 2 === 0) { child.side = "right"; rightData.children.push(child); }
+            else { child.side = "left"; leftData.children.push(child); }
         });
     }
 
     let nodes = [state.root];
     state.root.x = 0; state.root.y = 0;
 
+    // Custom children accessor that respects _collapsed state
+    const childrenAccessor = d => d._collapsed ? null : d.children;
+
     if (rightData.children.length) {
-        const rRoot = d3.hierarchy(rightData, d => d.children);
+        const rRoot = d3.hierarchy(rightData, childrenAccessor);
         state.treeRight(rRoot);
         rRoot.children.forEach(d => { adjustCoords(d, 1); nodes = nodes.concat(d.descendants()); });
     }
     if (leftData.children.length) {
-        const lRoot = d3.hierarchy(leftData, d => d.children);
+        const lRoot = d3.hierarchy(leftData, childrenAccessor);
         state.treeLeft(lRoot);
         lRoot.children.forEach(d => { adjustCoords(d, -1); nodes = nodes.concat(d.descendants()); });
     }
@@ -301,8 +334,13 @@ function update(source) {
         .attr("transform", d => `translate(${source.y0 || 0},${source.x0 || 0})`)
         .on('click', (e, d) => {
             if (e.defaultPrevented) return;
-            if (d.depth > 0 && d.children) { d._children = d.children; d.children = null; update(d); }
-            else if (d.depth > 0 && d._children) { d.children = d._children; d._children = null; update(d); }
+            state.selectedNode = d;
+
+            // Toggle children using data property
+            if (d.data.children || d.data._collapsed) {
+                d.data._collapsed = !d.data._collapsed;
+                update(d);
+            }
         })
         .on('dblclick', (e, d) => { e.stopPropagation(); startEditing(d); })
         .on('contextmenu', (e, d) => {
@@ -332,7 +370,9 @@ function update(source) {
 
     const nodeUpdate = node.merge(nodeEnter);
 
-    nodeUpdate.transition().duration(config.duration)
+    nodeUpdate.classed('selected', d => d === state.selectedNode);
+
+    nodeUpdate.transition().duration(duration)
         .attr("transform", d => `translate(${d.y},${d.x})`);
 
     nodeUpdate.select('text').text(d => d.data.name).style("opacity", 1);
@@ -342,7 +382,7 @@ function update(source) {
         .attr('x', function (d) { return -(this.parentNode.querySelector('text').getComputedTextLength() + 30) / 2; })
         .style("stroke", d => d.depth === 0 ? "none" : getBranchColor(d));
 
-    const nodeExit = node.exit().transition().duration(config.duration)
+    const nodeExit = node.exit().transition().duration(duration)
         .attr("transform", d => `translate(${source.y},${source.x})`)
         .remove();
     nodeExit.select('rect').attr('width', 0);
@@ -359,44 +399,45 @@ function update(source) {
         .style("stroke", d => getBranchColor(d.target));
 
     const linkUpdate = link.merge(linkEnter);
-    linkUpdate.transition().duration(config.duration)
+    linkUpdate.transition().duration(duration)
         .attr('d', d => diagonal(d.source, d.target))
         .style("stroke", d => getBranchColor(d.target));
 
-    link.exit().transition().duration(config.duration).remove();
+    link.exit().transition().duration(duration).remove();
 
     nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
 }
 
 // --- Recursive Drag Function ---
+// --- Recursive Drag Function ---
 function dragged(e, d) {
-    // FIXED: Directly use e.dx and e.dy without swapping
-    // Because our x/y are already aligned to visual screen space in update()
     const dx = e.dx;
     const dy = e.dy;
 
-    // Function to recursively move children
+    // Function to recursively move children data
     function moveNodeAndChildren(node) {
         // Update internal data for persistence
         node.data.dx = (node.data.dx || 0) + dy; // Vertical shift (Visual Y)
         node.data.dy = (node.data.dy || 0) + dx; // Horizontal shift (Visual X)
 
-        // Update visual position immediately
-        node.x += dy;
-        node.y += dx;
-
-        // Move visual element
-        d3.select('#node-' + node.data.id).attr("transform", `translate(${node.y},${node.x})`);
-
-        // Recurse
-        if (node.children) node.children.forEach(moveNodeAndChildren);
-        if (node._children) node._children.forEach(moveNodeAndChildren); // Also move hidden children
+        // Recurse on data children (since we are updating data)
+        if (node.data.children) {
+            // We need to find the hierarchy nodes that correspond to these data nodes?
+            // Actually, we just need to update the data.
+            // But wait, the recursion in the previous version was on hierarchy nodes 'node.children'.
+            // If we want to move the whole subtree, we should traverse the hierarchy.
+            // But 'd' is a hierarchy node.
+        }
     }
 
-    moveNodeAndChildren(d);
+    // We traverse the hierarchy 'd' to update 'data' for all descendants.
+    d.descendants().forEach(node => {
+        node.data.dx = (node.data.dx || 0) + dy;
+        node.data.dy = (node.data.dy || 0) + dx;
+    });
 
-    // Update all links
-    state.g.selectAll('path.link').attr('d', l => diagonal(l.source, l.target));
+    // Update the whole tree immediately without transition
+    update(state.root, 0);
 }
 
 function diagonal(s, d) {
