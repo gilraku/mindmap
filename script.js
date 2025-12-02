@@ -1,7 +1,9 @@
-// --- Config ---
+import { jsPDF } from "jspdf";
+import "svg2pdf.js";
+
 const config = {
     duration: 400,
-    nodeHeight: 65,  // Spacing to prevent stacking
+    nodeHeight: 80,  // Increased spacing to prevent stacking
     nodeWidth: 180,
     colors: [
         "#4285F4", "#EA4335", "#FBBC05", "#34A853",
@@ -50,6 +52,8 @@ const demoXML = `
 </node>
 </node>
 </map>`;
+
+
 
 // --- Init ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -268,8 +272,19 @@ function getBranchColor(d) {
 }
 
 function update(source, duration = config.duration) {
-    state.treeLeft = d3.tree().nodeSize([config.nodeHeight, config.nodeWidth]);
-    state.treeRight = d3.tree().nodeSize([config.nodeHeight, config.nodeWidth]);
+    // Calculate dynamic node width based on text length in the current tree
+    let maxTextLen = 0;
+    if (state.root) {
+        state.root.descendants().forEach(d => {
+            const len = d.data.name.length;
+            if (len > maxTextLen) maxTextLen = len;
+        });
+    }
+    // Estimate width: ~8px per char + 60px padding. Min width from config.
+    const dynamicNodeWidth = Math.max(config.nodeWidth, (maxTextLen * 8) + 60);
+
+    state.treeLeft = d3.tree().nodeSize([config.nodeHeight, dynamicNodeWidth]);
+    state.treeRight = d3.tree().nodeSize([config.nodeHeight, dynamicNodeWidth]);
 
     const rightData = { children: [] };
     const leftData = { children: [] };
@@ -505,15 +520,62 @@ async function downloadImage(fmt) {
 }
 
 async function downloadPDF() {
-    const cvs = await downloadImage('canvas');
-    if (!cvs) return;
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF(cvs.width > cvs.height ? 'l' : 'p', 'mm', 'a4');
-    const pw = pdf.internal.pageSize.getWidth();
-    const ph = pdf.internal.pageSize.getHeight();
-    const r = Math.min(pw / cvs.width, ph / cvs.height);
-    pdf.addImage(cvs.toDataURL('image/png'), 'PNG', (pw - cvs.width * r) / 2, (ph - cvs.height * r) / 2, cvs.width * r, cvs.height * r);
-    pdf.save('notebook_map.pdf');
+    document.getElementById('loading').style.display = 'flex';
+    try {
+        // 1. Prepare SVG (Clone and Style)
+        const clone = state.svg.node().cloneNode(true);
+        clone.querySelector('g').removeAttribute('transform');
+
+        // Calculate bounds
+        const bounds = state.g.node().getBBox();
+        const pad = 50;
+        const w = bounds.width + pad * 2;
+        const h = bounds.height + pad * 2;
+
+        clone.setAttribute('viewBox', `${bounds.x - pad} ${bounds.y - pad} ${w} ${h}`);
+        clone.setAttribute('width', w);
+        clone.setAttribute('height', h);
+
+        // Add styles for PDF
+        const style = document.createElement('style');
+        style.textContent = `
+            text { font-family: 'Roboto', sans-serif; font-size: 14px; fill: #1f1f1f; }
+            .root text { font-size: 16px; fill: white; font-weight: bold; }
+            rect { fill: white; stroke-width: 2px; }
+            .root rect { fill: #1a73e8; stroke: none; }
+            path { fill: none; stroke-width: 2px; opacity: 0.6; }
+        `;
+        clone.prepend(style);
+
+        // Append to body (hidden) so svg2pdf can compute styles
+        clone.style.position = 'absolute';
+        clone.style.left = '-9999px';
+        clone.style.top = '-9999px';
+        document.body.appendChild(clone);
+
+        // 2. Create PDF
+        // Use points (pt) for dimensions to match SVG units roughly
+        const pdf = new jsPDF(w > h ? 'l' : 'p', 'pt', [w, h]);
+
+        // 3. Render SVG to PDF
+        await pdf.svg(clone, {
+            x: 0,
+            y: 0,
+            width: w,
+            height: h
+        });
+
+        // Cleanup
+        document.body.removeChild(clone);
+
+        pdf.save('notebook_map.pdf');
+
+    } catch (e) {
+        console.error(e);
+        alert("PDF Export Error: " + e.message);
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
 }
 
 function downloadJSON() {
